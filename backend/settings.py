@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 import os
 from pathlib import Path
 from datetime import timedelta
+from decouple import config
 from dotenv import load_dotenv
 from pathlib import Path
 load_dotenv()  # make sure python-dotenv is installed and .env exists
@@ -47,6 +48,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'channels',
+    'django_celery_beat',
 
     # Local app
     'users',
@@ -92,9 +94,15 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 import dj_database_url
 
 DATABASES = {
-    "default": dj_database_url.parse(os.getenv("DATABASE_URL", "sqlite:///db.sqlite3"))
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': config('DB_NAME', default='inventorydb'),
+        'USER': config('DB_USER', default='inventoryuser'),
+        'PASSWORD': config('DB_PASSWORD', default='inventorypass'),
+        'HOST': config('DB_HOST', default='127.0.0.1'),
+        'PORT': config('DB_PORT', default='5434'),  # <-- make sure this matches your server
+    }
 }
-
 # Channels
 ASGI_APPLICATION = "backend.asgi.application"
 CHANNEL_LAYERS = {
@@ -142,6 +150,7 @@ USE_TZ = True
 STATIC_URL = 'static/'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+REPORTS_ROOT = MEDIA_ROOT / "reports"   # where generated reports will be saved
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -157,6 +166,13 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 20,
+    "DEFAULT_FILTER_BACKENDS": [
+        "django_filters.rest_framework.DjangoFilterBackend",
+        "rest_framework.filters.SearchFilter",
+        "rest_framework.filters.OrderingFilter",
+    ],
 }
 
 # Simple JWT config (optional)
@@ -169,3 +185,28 @@ SIMPLE_JWT = {
 # Custom user model (we'll create it)
 AUTH_USER_MODEL = "users.User"
 
+EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+DEFAULT_FROM_EMAIL = "no-reply@example.com"
+
+# Example using Gmail SMTP (replace with your SMTP or use console for dev)
+EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "no-reply@example.com")
+
+
+# shop meta
+SHOP_NAME = os.getenv("SHOP_NAME", "D2M Shop")
+# later set to str(MEDIA_ROOT / "logo.png") if you add logo
+SHOP_LOGO_PATH = os.getenv("SHOP_LOGO_PATH", None)
+
+
+# Celery / Redis
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/1")
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'Africa/Kigali'  # your timezone
