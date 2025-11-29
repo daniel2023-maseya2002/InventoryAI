@@ -16,6 +16,8 @@ from datetime import timedelta
 from decouple import config
 from dotenv import load_dotenv
 from pathlib import Path
+from celery.schedules import crontab
+
 load_dotenv()  # make sure python-dotenv is installed and .env exists
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -210,3 +212,16 @@ CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'Africa/Kigali'  # your timezone
+
+CELERY_BEAT_SCHEDULE = {
+    'daily-low-stock-email': {
+        'task': 'inventory.tasks.generate_and_email_report',
+        'schedule': crontab(hour=8, minute=0),  # 08:00 local time
+        'args': ('low_stock',),  # report_type
+        'kwargs': {
+            'to_emails': [],  # we'll fill inside task if empty: use admins
+            'attach_types': ('pdf','xlsx'),
+            'email_subject': 'Daily Low Stock Report'
+        }
+    },
+}

@@ -9,7 +9,7 @@ from django.db.models import Q
 from django.contrib.auth import get_user_model
 from django.conf import settings
 from django.utils.timezone import now
-from django.http import StreamingHttpResponse
+from django.http import StreamingHttpResponse, JsonResponse, FileResponse, Http404
 
 from rest_framework import viewsets, status, parsers
 from rest_framework.decorators import action
@@ -32,6 +32,11 @@ from .models import Product, StockLog, Notification
 from .serializers import ProductSerializer, StockLogSerializer, NotificationSerializer
 from .permissions import IsAdminOrStaffWrite
 from .utils import create_notification
+
+# Celery
+from celery.result import AsyncResult
+from .tasks import generate_and_email_report
+from pathlib import Path
 
 User = get_user_model()
 
@@ -153,7 +158,14 @@ def _header_footer(canvas, doc):
     canvas.restoreState()
 
 
-def _build_pdf_from_table(data, col_widths=None, title="Report"):
+def _build_pdf_from_table(data, col_widths=None, title="Report", highlight_rows=None, highlight_low=False):
+    """
+    data: list of rows (header row first)
+    highlight_rows: set of integer indices (data rows) to highlight (1-based relative to data)
+    highlight_low: if True, highlight all data rows (used for low-stock)
+    """
+    highlight_rows = set(highlight_rows or [])
+
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=15 * mm, rightMargin=15 * mm, topMargin=25 * mm, bottomMargin=20 * mm)
     styles = _get_styles()
@@ -161,19 +173,31 @@ def _build_pdf_from_table(data, col_widths=None, title="Report"):
     story.append(Paragraph(title, styles["Title"]))
     story.append(Spacer(1, 6))
 
+    # table
     table = Table(data, repeatRows=1, colWidths=col_widths)
-    table.setStyle(TableStyle([
+    # base style
+    table_style = [
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#F2F2F2")),
         ('GRID', (0, 0), (-1, -1), 0.25, colors.black),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ('FONTSIZE', (0, 0), (-1, -1), 8),
         ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-    ]))
+    ]
+
+    # apply row highlighting (red background + text color)
+    for row_idx in range(1, len(data)):
+        if highlight_low or (row_idx in highlight_rows):
+            # (row_idx, 0) to (row_idx, lastcol)
+            table_style.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor("#FFEEEE")))
+            table_style.append(('TEXTCOLOR', (0, row_idx), (-1, row_idx), colors.HexColor("#880000")))
+
+    table.setStyle(TableStyle(table_style))
     story.append(table)
 
     doc.build(story, onFirstPage=_header_footer, onLaterPages=_header_footer)
     buf.seek(0)
     return buf
+
 
 
 # -----------------------------
@@ -482,3 +506,59 @@ class StockLogsPdfReportView(APIView):
         resp = StreamingHttpResponse(buf, content_type="application/pdf")
         resp['Content-Disposition'] = f'attachment; filename="{filename}"'
         return resp
+
+# API to queue a report generation job
+class QueueReportView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        """
+        POST body (json):
+        {
+          "report_type": "inventory" | "low_stock" | "stock_logs",
+          "params": { ... optional filters ... },
+          "email": true|false  # if true, email to admins
+        }
+        Response:
+        { "task_id": "<celery task id>", "status": "queued" }
+        """
+        data = request.data
+        rtype = data.get("report_type")
+        params = data.get("params") or {}
+        email_flag = data.get("email", False)
+
+        # collect admin emails if email_flag
+        to_emails = None
+        if email_flag:
+            admins = User.objects.filter(Q(role="admin") | Q(is_superuser=True)).exclude(email__isnull=True).exclude(email__exact="")
+            to_emails = [u.email for u in admins]
+
+        # queue the task
+        task = generate_and_email_report.delay(rtype, to_emails=to_emails, params=params, attach_types=("pdf","xlsx"))
+        return Response({"task_id": task.id, "status": "queued"}, status=status.HTTP_202_ACCEPTED)
+
+
+# API to check task status and list generated files (if any)
+class ReportStatusView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, task_id):
+        res = AsyncResult(task_id)
+        data = {"task_id": task_id, "state": res.state}
+        if res.state == "SUCCESS":
+            data["result"] = res.result
+        elif res.state == "FAILURE":
+            data["error"] = str(res.result)
+        return Response(data)
+    
+
+class ReportDownloadView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, filename):
+        # only allow files from REPORTS_ROOT
+        reports_root = Path(settings.REPORTS_ROOT)
+        target = reports_root / filename
+        if not target.exists() or not target.is_file():
+            raise Http404("File not found")
+        return FileResponse(open(target, "rb"), as_attachment=True, filename=filename)
