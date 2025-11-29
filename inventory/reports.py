@@ -45,8 +45,6 @@ def _fetch_inventory_rows(filters=None):
     return rows
 
 def _fetch_low_stock_rows():
-    qs = Product.objects.filter(quantity__lte=Product._meta.get_field('low_stock_threshold').name and (Product.objects.none().query))  # placeholder to avoid lint errors
-    # Better: use F expression so import here:
     from django.db.models import F
     qs = Product.objects.filter(quantity__lte=F('low_stock_threshold')).order_by("quantity")
     rows = []
@@ -99,7 +97,7 @@ def _header_footer(canvas, doc):
     canvas.saveState()
     width, height = landscape(A4)
 
-    # Header: shop name left
+    # Header
     shop_name = getattr(settings, "SHOP_NAME", "Inventory")
     canvas.setFont("Helvetica-Bold", 12)
     canvas.drawString(20 * mm, height - 15 * mm, shop_name)
@@ -162,7 +160,7 @@ def _build_pdf_from_table(data, col_widths=None, title="Report", highlight_rows=
     buf.seek(0)
     return buf
 
-# Expose functions used by tasks/views
+# export
 __all__ = [
     "_fetch_inventory_rows",
     "_fetch_low_stock_rows",

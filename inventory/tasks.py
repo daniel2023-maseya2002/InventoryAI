@@ -1,5 +1,4 @@
 # inventory/tasks.py
-import os
 from pathlib import Path
 from celery import shared_task
 from django.conf import settings
@@ -22,6 +21,10 @@ def _ensure_reports_dir():
 
 @shared_task(bind=True)
 def generate_and_email_report(self, report_type, to_emails=None, params=None, email_subject=None, email_body=None, attach_types=("pdf","xlsx")):
+    """
+    Generates report files (pdf/xlsx) in REPORTS_DIR and optionally emails them.
+    Returns dict with list of files.
+    """
     try:
         params = params or {}
         _ensure_reports_dir()
@@ -39,7 +42,6 @@ def generate_and_email_report(self, report_type, to_emails=None, params=None, em
 
             if "pdf" in attach_types:
                 data = [["SKU","Name","Category","Qty","Purchase Price","Selling Price","Total Value","Supplier","Low Threshold"]]
-                # highlight rows where qty <= threshold
                 highlight_rows = set()
                 for i, r in enumerate(rows, start=1):
                     qty = r.get("quantity", 0)
@@ -74,7 +76,6 @@ def generate_and_email_report(self, report_type, to_emails=None, params=None, em
                         f"{r.get('selling_price',0) if r.get('selling_price') is not None else ''}",
                         f"{r.get('total_value',0):.2f}", r.get("supplier","")
                     ])
-                # highlight all rows for low-stock report
                 buf = _build_pdf_from_table(data, title="Low Stock Report", highlight_low=True)
                 path = REPORTS_DIR / f"lowstock_{now().strftime('%Y%m%d_%H%M%S')}.pdf"
                 with open(path, "wb") as f:
@@ -102,6 +103,7 @@ def generate_and_email_report(self, report_type, to_emails=None, params=None, em
                     f.write(buf.getvalue())
                 files_to_attach.append(str(path))
 
+        # email if requested
         if to_emails:
             subject = email_subject or f"{settings.SHOP_NAME} - {report_type.replace('_',' ').title()} Report"
             body = email_body or f"Attached is the requested {report_type} report generated at {now().isoformat()}."
@@ -115,3 +117,13 @@ def generate_and_email_report(self, report_type, to_emails=None, params=None, em
     except Exception as e:
         self.update_state(state='FAILURE', meta={'exc': str(e)})
         raise
+
+@shared_task
+def daily_low_stock_email():
+    """
+    Wrapper scheduled task for Celery Beat that collects admin emails and queues the report task.
+    """
+    admins = User.objects.filter(Q(role="admin") | Q(is_superuser=True)).exclude(email__isnull=True).exclude(email__exact="")
+    emails = [u.email for u in admins]
+    # call generate_and_email_report synchronously via .delay so it's enqueued as subtask
+    return generate_and_email_report.delay('low_stock', to_emails=emails, attach_types=("pdf","xlsx"), email_subject="Daily Low Stock Report")
