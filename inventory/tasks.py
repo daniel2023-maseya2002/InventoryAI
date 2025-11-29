@@ -122,3 +122,9 @@ def generate_and_email_report(self, report_type, to_emails=None, params=None, em
         # capture exception to task backend
         self.update_state(state='FAILURE', meta={'exc': str(e)})
         raise
+
+@shared_task
+def daily_low_stock_email():
+    admins = User.objects.filter(Q(role="admin") | Q(is_superuser=True)).exclude(email__isnull=True).exclude(email__exact="")
+    emails = [u.email for u in admins]
+    return generate_and_email_report.delay('low_stock', to_emails=emails, attach_types=("pdf","xlsx"), email_subject="Daily Low Stock Report")
