@@ -2,6 +2,7 @@
 import io
 import pandas as pd
 from datetime import datetime
+from pathlib import Path
 
 from django.shortcuts import get_object_or_404
 from django.db import models as djmodels
@@ -28,15 +29,15 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 
+from celery.result import AsyncResult
+
 from .models import Product, StockLog, Notification
 from .serializers import ProductSerializer, StockLogSerializer, NotificationSerializer
 from .permissions import IsAdminOrStaffWrite
 from .utils import create_notification
 
-# Celery
-from celery.result import AsyncResult
-from .tasks import generate_and_email_report
-from pathlib import Path
+# Note: do NOT import tasks at module level to avoid circular imports
+# from .tasks import generate_and_email_report  <-- intentionally removed
 
 User = get_user_model()
 
@@ -387,7 +388,12 @@ class InventoryPdfReportView(APIView):
         }
         rows = _fetch_inventory_rows(filters)
         data = [["SKU", "Name", "Category", "Qty", "Purchase Price", "Selling Price", "Total Value", "Supplier", "Low Threshold"]]
-        for r in rows:
+        highlight_rows = set()
+        for i, r in enumerate(rows, start=1):
+            qty = r.get("quantity", 0)
+            thr = r.get("low_stock_threshold", 0)
+            if qty <= thr:
+                highlight_rows.add(i)
             data.append([
                 r.get("sku", ""),
                 r.get("name", ""),
@@ -401,7 +407,7 @@ class InventoryPdfReportView(APIView):
             ])
 
         title = "Inventory Summary"
-        buf = _build_pdf_from_table(data, title=title)
+        buf = _build_pdf_from_table(data, title=title, highlight_rows=highlight_rows)
         filename = f"inventory_summary_{datetime.utcnow().date().isoformat()}.pdf"
         resp = StreamingHttpResponse(buf, content_type="application/pdf")
         resp['Content-Disposition'] = f'attachment; filename="{filename}"'
@@ -450,7 +456,7 @@ class LowStockPdfReportView(APIView):
                 r.get("supplier", ""),
             ])
         title = "Low-Stock Report"
-        buf = _build_pdf_from_table(data, title=title)
+        buf = _build_pdf_from_table(data, title=title, highlight_low=True)
         filename = f"low_stock_report_{datetime.utcnow().date().isoformat()}.pdf"
         resp = StreamingHttpResponse(buf, content_type="application/pdf")
         resp['Content-Disposition'] = f'attachment; filename="{filename}"'
@@ -532,6 +538,9 @@ class QueueReportView(APIView):
         if email_flag:
             admins = User.objects.filter(Q(role="admin") | Q(is_superuser=True)).exclude(email__isnull=True).exclude(email__exact="")
             to_emails = [u.email for u in admins]
+
+        # lazy import to avoid circular import at module load
+        from .tasks import generate_and_email_report
 
         # queue the task
         task = generate_and_email_report.delay(rtype, to_emails=to_emails, params=params, attach_types=("pdf","xlsx"))
