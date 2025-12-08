@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     # Local app
     'users',
     'inventory',
+    'ai',
 ]
 
 MIDDLEWARE = [
@@ -105,13 +106,32 @@ DATABASES = {
         'PORT': config('DB_PORT', default='5434'),  # <-- make sure this matches your server
     }
 }
-# Channels
+
+# login code defaults
+LOGIN_CODE_MAX_ATTEMPTS = int(os.getenv("LOGIN_CODE_MAX_ATTEMPTS", 5))
+LOGIN_CODE_LOCK_MINUTES = int(os.getenv("LOGIN_CODE_LOCK_MINUTES", 15))
+LOGIN_CODE_EXPIRE_MINUTES = int(os.getenv("LOGIN_CODE_EXPIRE_MINUTES", 15))
+LOGIN_CODE_CLEANUP_DAYS = int(os.getenv("LOGIN_CODE_CLEANUP_DAYS", 30))
+
+# near the bottom of settings.py
+
 ASGI_APPLICATION = "backend.asgi.application"
+
 CHANNEL_LAYERS = {
-    "default": {
-        "BACKEND": "channels_redis.core.RedisChannelLayer",
-        "CONFIG": {"hosts": [os.getenv("REDIS_URL", "redis://localhost:6379")]},
-    }
+    "default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}
+}
+
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {"console": {"class": "logging.StreamHandler"}},
+    "loggers": {
+        "channels": {"handlers": ["console"], "level": "DEBUG"},
+        "django.channels": {"handlers": ["console"], "level": "DEBUG"},
+        "uvicorn.error": {"handlers": ["console"], "level": "INFO"},
+        "uvicorn.access": {"handlers": ["console"], "level": "INFO"},
+    },
 }
 
 
@@ -164,6 +184,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
+         'rest_framework.authentication.SessionAuthentication',
     ),
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
@@ -178,8 +199,9 @@ REST_FRAMEWORK = {
      "DEFAULT_THROTTLE_CLASSES": [
         # global throttles if needed (keep small)
     ],
-    "DEFAULT_THROTTLE_RATES": {
-        "request_code": "6/hour",   # adjust as desired
+    'DEFAULT_THROTTLE_RATES': {
+        'request_code': '5/min',  # allow 5 requests per minute
+        'anon': '10/day',          # optional, for anonymous requests
     }
 }
 

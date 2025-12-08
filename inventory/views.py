@@ -31,6 +31,10 @@ from reportlab.lib.utils import ImageReader
 
 from celery.result import AsyncResult
 
+# Channels (for real-time notifications)
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
+
 from .models import Product, StockLog, Notification
 from .serializers import ProductSerializer, StockLogSerializer, NotificationSerializer
 from .permissions import IsAdminOrStaffWrite
@@ -40,6 +44,35 @@ from .utils import create_notification
 # from .tasks import generate_and_email_report  <-- intentionally removed
 
 User = get_user_model()
+
+
+# -----------------------------
+# Real-time emit helper
+# -----------------------------
+def emit_ws_notification(user=None, title="", message="", payload=None):
+    """
+    Send a notification to the user's group (user_{id}) or broadcast group ("broadcast").
+    payload is a dict with extra data. This uses Channels channel_layer.group_send.
+    """
+    try:
+        channel_layer = get_channel_layer()
+        if channel_layer is None:
+            return
+        event = {
+            "type": "notify",  # consumer expects method notify
+            "title": title,
+            "message": message,
+            "payload": payload or {},
+            "created_at": now().isoformat(),
+        }
+        if user:
+            group = f"user_{user.id}"
+        else:
+            group = "broadcast"
+        async_to_sync(channel_layer.group_send)(group, event)
+    except Exception:
+        # do not break main flow if ws delivery fails
+        return
 
 
 # -----------------------------
@@ -200,7 +233,6 @@ def _build_pdf_from_table(data, col_widths=None, title="Report", highlight_rows=
     return buf
 
 
-
 # -----------------------------
 # ViewSets
 # -----------------------------
@@ -256,7 +288,21 @@ class ProductViewSet(viewsets.ModelViewSet):
                         },
                         send_email=False,
                     )
+                    # Emit real-time notification to this admin
+                    emit_ws_notification(
+                        user=admin,
+                        title=f"Low stock: {product.name}",
+                        message=f"Product '{product.name}' quantity is {product.quantity} (threshold {product.low_stock_threshold}).",
+                        payload={
+                            "product_id": str(product.id),
+                            "product_name": product.name,
+                            "quantity": product.quantity,
+                            "threshold": product.low_stock_threshold,
+                            "reference": reference,
+                        },
+                    )
 
+                # broadcast notification (user=None) so all staff see it in the center
                 create_notification(
                     user=None,
                     type="low_stock",
@@ -270,6 +316,19 @@ class ProductViewSet(viewsets.ModelViewSet):
                         "reference": reference,
                     },
                     send_email=False,
+                )
+                # emit broadcast
+                emit_ws_notification(
+                    user=None,
+                    title=f"Low stock: {product.name}",
+                    message=f"Product '{product.name}' quantity is {product.quantity} (threshold {product.low_stock_threshold}).",
+                    payload={
+                        "product_id": str(product.id),
+                        "product_name": product.name,
+                        "quantity": product.quantity,
+                        "threshold": product.low_stock_threshold,
+                        "reference": reference,
+                    },
                 )
         except Exception:
             pass

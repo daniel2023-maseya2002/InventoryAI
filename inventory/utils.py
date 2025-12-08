@@ -4,6 +4,8 @@ from django.contrib.auth import get_user_model
 from django.conf import settings
 from django.core.mail import send_mail
 
+
+
 User = get_user_model()
 
 def create_notification(user=None, type="info", title="", message="", payload=None, send_email=False):
@@ -28,3 +30,4 @@ def create_notification(user=None, type="info", title="", message="", payload=No
             pass
 
     return notif
+
