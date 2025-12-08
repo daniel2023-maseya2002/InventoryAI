@@ -20,6 +20,9 @@ urlpatterns = [
     # include users app routes
     path('api/', include('users.urls')),
 
+    # include ai app routes
+    path("api/ai/", include("ai.urls")),
+
     # JWT auth endpoints
     path("api/auth/token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("api/auth/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),

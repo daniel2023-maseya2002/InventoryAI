@@ -115,12 +115,6 @@ LOGIN_CODE_CLEANUP_DAYS = int(os.getenv("LOGIN_CODE_CLEANUP_DAYS", 30))
 
 # near the bottom of settings.py
 
-ASGI_APPLICATION = "backend.asgi.application"
-
-CHANNEL_LAYERS = {
-    "default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}
-}
-
 
 LOGGING = {
     "version": 1,
@@ -266,3 +260,9 @@ CELERY_BEAT_SCHEDULE = {
 # login code expiry (minutes)
 LOGIN_CODE_EXPIRE_MINUTES = int(os.getenv("LOGIN_CODE_EXPIRE_MINUTES", 15))
 
+# -------------------
+# OLLAMA CONFIG
+# -------------------
+
+OLLAMA_BASE_URL = "http://127.0.0.1:11434"
+OLLAMA_DEFAULT_MODEL = "llama3"
