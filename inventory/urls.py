@@ -7,13 +7,15 @@ from .views import (
     InventoryExcelReportView, InventoryPdfReportView,
     LowStockExcelReportView, LowStockPdfReportView,
     StockLogsExcelReportView, StockLogsPdfReportView,
-    QueueReportView, ReportStatusView, ReportDownloadView
+    QueueReportView, ReportStatusView, ReportDownloadView, SaleViewSet
 )
 
 router = routers.DefaultRouter()
 router.register(r'products', ProductViewSet, basename='product')
 router.register(r'stock-logs', StockLogViewSet, basename='stocklog')
 router.register(r'notifications', NotificationViewSet, basename='notification')
+router.register(r"sales", SaleViewSet, basename="sales")
+
 
 urlpatterns = [
     path('', include(router.urls)),
@@ -24,6 +26,7 @@ urlpatterns = [
     path('reports/low_stock.pdf', LowStockPdfReportView.as_view(), name='lowstock-pdf'),
     path('reports/stock_logs.xlsx', StockLogsExcelReportView.as_view(), name='stocklogs-excel'),
     path('reports/stock_logs.pdf', StockLogsPdfReportView.as_view(), name='stocklogs-pdf'),
+    
 
     # queue/status/download
     path('reports/queue/', QueueReportView.as_view(), name='reports-queue'),

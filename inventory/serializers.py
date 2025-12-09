@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Product, StockLog, Notification
+from .models import Product, StockLog, Notification, Sale
 from django.contrib.auth import get_user_model
 
 
@@ -59,3 +59,11 @@ class NotificationSerializer(serializers.ModelSerializer):
         model = Notification
         fields = ["id","user","type","title","message","payload","is_read","created_at"]
         read_only_fields = ["id","created_at"]
+
+class SaleSerializer(serializers.ModelSerializer):
+    product_name = serializers.CharField(source="product.name", read_only=True)
+    user_name = serializers.CharField(source="user.username", read_only=True)
+
+    class Meta:
+        model = Sale
+        fields = "__all__"

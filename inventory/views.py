@@ -35,8 +35,8 @@ from celery.result import AsyncResult
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 
-from .models import Product, StockLog, Notification
-from .serializers import ProductSerializer, StockLogSerializer, NotificationSerializer
+from .models import Product, StockLog, Notification, Sale
+from .serializers import ProductSerializer, StockLogSerializer, NotificationSerializer, SaleSerializer
 from .permissions import IsAdminOrStaffWrite
 from .utils import create_notification
 
@@ -630,3 +630,27 @@ class ReportDownloadView(APIView):
         if not target.exists() or not target.is_file():
             raise Http404("File not found")
         return FileResponse(open(target, "rb"), as_attachment=True, filename=filename)
+
+
+class SaleViewSet(viewsets.ModelViewSet):
+    queryset = Sale.objects.select_related("product", "user").all()
+    serializer_class = SaleSerializer
+    permission_classes = [IsAuthenticated]
+
+    def perform_create(self, serializer):
+        sale = serializer.save(user=self.request.user)
+
+        # ✅ AUTO REDUCE PRODUCT STOCK
+        product = sale.product
+        product.quantity -= sale.quantity
+        product.save(update_fields=["quantity"])
+
+        # ✅ LOG IT
+        StockLog.objects.create(
+            product=product,
+            user=self.request.user,
+            change_amount=-sale.quantity,
+            reason="sale",
+            resulting_quantity=product.quantity,
+            reference=f"sale-{sale.id}"
+        )
