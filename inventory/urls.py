@@ -7,7 +7,7 @@ from .views import (
     InventoryExcelReportView, InventoryPdfReportView,
     LowStockExcelReportView, LowStockPdfReportView,
     StockLogsExcelReportView, StockLogsPdfReportView,
-    QueueReportView, ReportStatusView, ReportDownloadView, SaleViewSet
+    QueueReportView, ReportStatusView, ReportDownloadView, SaleViewSet, sales_chart_data
 )
 
 router = routers.DefaultRouter()
@@ -32,4 +32,6 @@ urlpatterns = [
     path('reports/queue/', QueueReportView.as_view(), name='reports-queue'),
     path('reports/status/<str:task_id>/', ReportStatusView.as_view(), name='reports-status'),
     path('reports/download/<str:filename>/', ReportDownloadView.as_view(), name='reports-download'),
+    path("analytics/sales-chart/", sales_chart_data),
+
 ]

@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'channels',
     'django_celery_beat',
+    'drf_yasg',
 
     # Local app
     'users',
@@ -254,6 +255,12 @@ CELERY_BEAT_SCHEDULE = {
             'email_subject': 'Daily Low Stock Report'
         }
     },
+
+    "daily-ai-sales-report": {
+        "task": "ai.tasks.generate_daily_ai_report",
+        "schedule": 86400,  # every 24 hours
+    },  
+    
 }
 
 
@@ -264,5 +271,13 @@ LOGIN_CODE_EXPIRE_MINUTES = int(os.getenv("LOGIN_CODE_EXPIRE_MINUTES", 15))
 # OLLAMA CONFIG
 # -------------------
 
-OLLAMA_BASE_URL = "http://127.0.0.1:11434"
-OLLAMA_DEFAULT_MODEL = "llama3"
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
+OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", 400))
+OLLAMA_MAX_RETRIES = int(os.getenv("OLLAMA_MAX_RETRIES", 3))
+OLLAMA_RETRY_BACKOFF = float(os.getenv("OLLAMA_RETRY_BACKOFF", 1.5))
+AI_CACHE_SECONDS = int(os.getenv("AI_CACHE_SECONDS", 30))
+
+
+ADMINS = [("Admin", "maseyadaniel@gmail.com")]
+DEFAULT_FROM_EMAIL = "maseyadaniel@gmail.com"

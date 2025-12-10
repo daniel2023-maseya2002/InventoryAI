@@ -29,6 +29,17 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
+from django.utils.timezone import now
+from datetime import timedelta
+from django.db.models import Sum
+
+from .models import Sale
+
+
 from celery.result import AsyncResult
 
 # Channels (for real-time notifications)
@@ -654,3 +665,19 @@ class SaleViewSet(viewsets.ModelViewSet):
             resulting_quantity=product.quantity,
             reference=f"sale-{sale.id}"
         )
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def sales_chart_data(request):
+    days = int(request.GET.get("days", 30))
+    since = now() - timedelta(days=days)
+
+    data = (
+        Sale.objects.filter(created_at__gte=since)
+        .extra(select={"day": "date(created_at)"})
+        .values("day")
+        .annotate(total=Sum("quantity"))
+        .order_by("day")
+    )
+
+    return Response(data)
